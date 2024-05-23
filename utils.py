@@ -7,49 +7,18 @@ from sklearn.linear_model import LogisticRegression
 import cv2
 
 class DU_mnist_ShapleyCalculator:
-    def __init__(self, dataset='mnist_784', model=LogisticRegression, metric=accuracy_score, max_iter=1000, load="normal"):
+    def __init__(self, dataset='mnist_784', model=LogisticRegression, metric=accuracy_score, max_iter=1000):
         self.dataset = dataset
         self.model = model
         self.metric = metric
         self.max_iter = max_iter
-        if load == "normal":
-            self.load_data_normal()
-        if load = "blur":
-            self.load_data_blur()
-        if load = "noise":
-            self.load_data_noise()
+        self.load_data_normal()
 
     def load_data_normal(self):
         """ Load the MNIST dataset and split it into training and testing sets."""
         mnist = fetch_openml(self.dataset)
         X, y = mnist.data.to_numpy(), mnist.target.astype(int).to_numpy()
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.1, random_state=39)
-    
-    def blur_image(self, image, kernel_size=5):
-        """Add blur to the image using a Gaussian kernel."""
-        image = image.reshape(28, 28)
-        image = cv2.GaussianBlur(image, (kernel_size, kernel_size), 0)
-        return image.flatten()
-
-    def load_data_blur(self):
-        """Load the Mnist dataset and add blur to the images"""
-        mnist = fetch_openml(self.dataset)
-        X, y = mnist.data.to_numpy(), mnist.target.astype(int).to_numpy()
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.1, random_state=39)
-        for i in range(len(self.X_train)):
-            self.X_train[i] = self.blur_image(self.X_train[i])
-        for i in range(len(self.X_test)):
-            self.X_test[i] = self.blur_image(self.X_test[i])
-
-    def load_data_noise(self):
-        """Load the Mnist dataset and add noise to the images"""
-        mnist = fetch_openml(self.dataset)
-        X, y = mnist.data.to_numpy(), mnist.target.astype(int).to_numpy()
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.1, random_state=39)
-        for i in range(len(self.X_train)):
-            self.X_train[i] = self.X_train[i] + np.random.normal(0, 0.1, 784)
-        for i in range(len(self.X_test)):
-            self.X_test[i] = self.X_test[i] + np.random.normal(0, 0.1, 784)
     
     def normal_players(self, I=10, mean=1000, std=150):
         """

@@ -4,6 +4,14 @@ import torch.nn as nn
 from torchvision import datasets, transforms, models
 from scipy.linalg import sqrtm
 
+# Frechet Inception Distance (FID)
+# Kernel Inception Distance (KID)
+# Perceptual Hashing
+# Structural Similarity Index (SSIM)
+# Multi-Scale Structural Similarity Index (MS-SSIM)
+# Learned Perceptual Image Patch Similarity (LPIPS)
+# Deep Image Prior (DIP) with a Pretrained Network and a Loss Function
+
 # Define the network (e.g., a simple CNN pretrained on MNIST)
 class SimpleCNN(nn.Module):
     def __init__(self):

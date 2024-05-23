@@ -5,16 +5,9 @@ from sklearn.metrics import accuracy_score
 from sklearn.linear_model import LogisticRegression
 from itertools import combinations
 
-# Load MNIST dataset
+# # Load MNIST dataset
 mnist = fetch_openml('mnist_784')
 X, y = mnist.data.to_numpy(), mnist.target.astype(int).to_numpy()
-
-# Function to calculate utility (accuracy)
-def calculate_utility(X_train, y_train, X_test, y_test):
-    model = LogisticRegression(max_iter=1000)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    return accuracy_score(y_test, y_pred)
 
 # Function to calculate DU-Shapley value
 def du_shapley_value(X, y, X_test, y_test, players_data):
@@ -47,6 +40,11 @@ y_test = y[:1000]
 players_data = []
 mean = 1000
 std = 150
+
+# Create a pool of available indices excluding test indices
+available_indices = set(range(70000)) - set(range(1000))
+
+# Ensure unique data points for each player
 for i in range(I):
     n = int(np.random.normal(mean, std))
     players_data.append(np.random.choice(range(1000 + i*10000, (i+1)*10000), n, replace=False))
@@ -55,7 +53,7 @@ for i in range(I):
 # Calculate DU-Shapley values
 du_shapley_vals = du_shapley_value(X, y, X_test, y_test, players_data)
 for i, val in enumerate(du_shapley_vals):
-    print(f"Player {i+1}: {val:.4f}")
+    print(f"Player {i+1} had {len(players_data[i])} data points and the DU-Shapley value is: {val:.4f}")
 
 # Visualization
 plt.figure(figsize=(10, 6))

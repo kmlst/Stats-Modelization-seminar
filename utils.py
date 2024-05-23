@@ -2,25 +2,68 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.datasets import fetch_openml
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, mean_squared_error
+from sklearn.metrics import accuracy_score
 from sklearn.linear_model import LogisticRegression
+import cv2
 
-class DUShapleyCalculator:
-    def __init__(self, dataset='mnist_784', model=LogisticRegression, metric=accuracy_score, max_iter=1000):
+class DU_mnist_ShapleyCalculator:
+    def __init__(self, dataset='mnist_784', model=LogisticRegression, metric=accuracy_score, max_iter=1000, load="normal"):
         self.dataset = dataset
         self.model = model
         self.metric = metric
         self.max_iter = max_iter
-        self.load_data()
-    
-    def load_data(self):
-        """ Load and prepare dataset. """
+        if load == "normal":
+            self.load_data_normal()
+        if load = "blur":
+            self.load_data_blur()
+        if load = "noise":
+            self.load_data_noise()
+
+    def load_data_normal(self):
+        """ Load the MNIST dataset and split it into training and testing sets."""
         mnist = fetch_openml(self.dataset)
         X, y = mnist.data.to_numpy(), mnist.target.astype(int).to_numpy()
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.1, random_state=42)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.1, random_state=39)
     
-    def initialize_players(self, I=10, mean=1000, std=150):
-        """ Initialize player data with unique data points. """
+    def blur_image(self, image, kernel_size=5):
+        """Add blur to the image using a Gaussian kernel."""
+        image = image.reshape(28, 28)
+        image = cv2.GaussianBlur(image, (kernel_size, kernel_size), 0)
+        return image.flatten()
+
+    def load_data_blur(self):
+        """Load the Mnist dataset and add blur to the images"""
+        mnist = fetch_openml(self.dataset)
+        X, y = mnist.data.to_numpy(), mnist.target.astype(int).to_numpy()
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.1, random_state=39)
+        for i in range(len(self.X_train)):
+            self.X_train[i] = self.blur_image(self.X_train[i])
+        for i in range(len(self.X_test)):
+            self.X_test[i] = self.blur_image(self.X_test[i])
+
+    def load_data_noise(self):
+        """Load the Mnist dataset and add noise to the images"""
+        mnist = fetch_openml(self.dataset)
+        X, y = mnist.data.to_numpy(), mnist.target.astype(int).to_numpy()
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.1, random_state=39)
+        for i in range(len(self.X_train)):
+            self.X_train[i] = self.X_train[i] + np.random.normal(0, 0.1, 784)
+        for i in range(len(self.X_test)):
+            self.X_test[i] = self.X_test[i] + np.random.normal(0, 0.1, 784)
+    
+    def normal_players(self, I=10, mean=1000, std=150):
+        """
+        Initializes player data by randomly selecting unique subsets of indices from training data. Each subset corresponds to a player, with the subset size normally distributed.
+        Each player has unique data points.
+
+        Parameters:
+        - I (int): Number of players. Defaults to 10.
+        - mean (int): Mean of the normal distribution. Defaults to 1000.
+        - std (int): Standard deviation of the normal distribution. Defaults to 150.
+        Attributes updated:
+        - self.I (int): Stores the number of players.
+        - self.players_data (list of lists): Each sublist contains the unique indices from self.X_train assigned to a player.
+        """
         self.I = I
         players_data = []
         available_indices = set(range(len(self.X_train))) - set(range(1000))
@@ -28,22 +71,24 @@ class DUShapleyCalculator:
             n = int(np.random.normal(mean, std))
             player_indices = np.random.choice(list(available_indices), n, replace=False)
             players_data.append(player_indices)
-            available_indices -= set(player_indices)
+            available_indices -= set(player_indices) # each player has unique data points
         self.players_data = players_data
     
     def du_shapley_value(self):
         """ Calculate DU-Shapley values for initialized players. """
         psi = np.zeros(self.I)
-        pooled_data = np.concatenate(self.players_data)
+        pooled_data = np.concatenate(self.players_data) # data they would have if they pooled
         for i in range(self.I):
             others = [j for j in range(self.I) if j != i]
-            mu_minus_i = sum(len(self.players_data[j]) for j in others) / (self.I - 1)
+            mu_minus_i = sum(len(self.players_data[j]) for j in others) / (self.I - 1) # average number of data points each other player has
+
             n_i = len(self.players_data[i])
             u_with = 0
             u_without = 0
             for k in range(self.I - 1):
                 model_with_i = self.model(max_iter=self.max_iter)
                 model_without_i = self.model(max_iter=self.max_iter)
+                # select a subset of pooled data
                 pooled_indices = np.random.choice(pooled_data, int(k * mu_minus_i) + n_i, replace=False)
                 model_with_i.fit(self.X_train[pooled_indices], self.y_train[pooled_indices])
                 if k:
@@ -66,7 +111,9 @@ class DUShapleyCalculator:
         plt.show()
 
 # Example usage
-calculator = DUShapleyCalculator()
-calculator.initialize_players()
+calculator = DU_mnist_ShapleyCalculator()
+calculator.normal_players()
 shapley_values = calculator.du_shapley_value()
 calculator.plot_shapley_values(shapley_values)
+
+

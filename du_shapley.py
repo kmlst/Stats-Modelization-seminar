@@ -41,7 +41,6 @@ def du_shapley_value(X, y, X_test, y_test, players_data):
 
 # Define players' data (index slices)
 I = 10
-
 X_test = X[:1000]
 y_test = y[:1000]
 

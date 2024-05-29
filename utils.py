@@ -44,27 +44,6 @@ class DU_mnist_ShapleyCalculator:
             available_indices -= set(player_indices) # each player has unique data points
         self.players_data = players_data
 
-    def degrade_data(self, player_indices, degradation_type='blur', severity=1):
-        """Degrades MNIST image data for given players.
-
-        Parameters:
-        - player_indices (list): List of player indices whose data needs degradation.
-        - degradation_type (str): Type of degradation. Options: 'blur', 'noise'. Defaults to 'blur'.
-        - severity (int): Level of degradation severity (1-5). Defaults to 1.
-        """
-        if degradation_type == 'blur':
-            kernel_size = 2 * severity + 1  # Kernel size increases with severity
-            for i in player_indices:
-                for j in self.players_data[i]:
-                    img = self.X_train[j].reshape(28, 28)
-                    self.X_train[j] = cv2.blur(img, (kernel_size, kernel_size)).flatten()
-        elif degradation_type == 'noise':
-            noise_scale = severity * 0.1  # Noise scale increases with severity
-            for i in player_indices:
-                for j in self.players_data[i]:
-                    noise = np.random.normal(0, noise_scale, size=self.X_train[j].shape)
-                    self.X_train[j] = np.clip(self.X_train[j] + noise, 0, 1)
-
     def utility(self, n):
         """ Calculate utility for a player with n data points chosen at random"""
         model = self.model(max_iter=self.max_iter)
@@ -80,12 +59,14 @@ class DU_mnist_ShapleyCalculator:
             mu_minus_i = sum(len(self.players_data[j]) for j in others) / (self.I - 1) 
 
             n_i = len(self.players_data[i])
-            
+
+            # Case k=0
             model_with_i = self.model(max_iter=self.max_iter)
             model_with_i.fit(self.X_train[self.players_data[i]], self.y_train[self.players_data[i]])
             u_with = self.metric(self.y_test, model_with_i.predict(self.X_test))
             psi[i] = u_with / self.I
 
+            # Calculate contributions for k = 1 to I-2
             for k in range(1, self.I - 1): 
                 u_with = 0  
                 model_with_i = self.model(max_iter=self.max_iter)
@@ -136,4 +117,80 @@ class DU_mnist_ShapleyCalculator:
         plt.title('DU-Shapley Values for Each Player')
         plt.xticks(range(1, self.I + 1))
         plt.show()
+
+# --- Fonctions pour la dégradation des données ---
+
+def add_noise(data, std_dev):
+    """Ajoute du bruit gaussien aux données."""
+    noise = np.random.normal(0, std_dev, size=data.shape)
+    return np.clip(data + noise, 0, 1)
+
+def apply_blur(data, kernel_size):
+    """Applique un flou gaussien aux données."""
+    blurred_data = np.zeros_like(data)
+    for i in range(data.shape[0]):
+        img = data[i].reshape(28, 28)
+        blurred_data[i] = cv2.blur(img, (kernel_size, kernel_size)).flatten()
+    return blurred_data
+
+def occlude_data(data, occlusion_ratio):
+    """Masque une partie des données avec des valeurs aléatoires."""
+    mask = np.random.rand(*data.shape) < occlusion_ratio
+    occluded_data = data.copy()
+    occluded_data[mask] = np.random.rand(np.sum(mask))
+    return occluded_data
+
+def downsample_data(data, downsampling_factor):
+    """Réduit la résolution des données."""
+    downsampled_data = np.zeros((data.shape[0], 784 // downsampling_factor**2))
+    for i in range(data.shape[0]):
+        img = data[i].reshape(28, 28)
+        downsampled_img = cv2.resize(img, (28 // downsampling_factor, 28 // downsampling_factor))
+        downsampled_data[i] = downsampled_img.flatten()
+    return downsampled_data
+
+def mislabel_data(data, labels, mislabeling_ratio):
+    """Introduit des erreurs dans les étiquettes des données."""
+    mislabeled_labels = labels.copy()
+    num_mislabeled = int(len(labels) * mislabeling_ratio)
+    mislabeled_indices = np.random.choice(len(labels), num_mislabeled, replace=False)
+    for i in mislabeled_indices:
+        mislabeled_labels[i] = np.random.choice([l for l in range(10) if l != labels[i]])
+    return data, mislabeled_labels
+
+# --- Méthodologie pour vérifier l'impact de la qualité des données ---
+
+def run_experiment(I, degradation_type, degradation_level, repetitions=10):
+    """Exécute une expérience pour un scénario donné."""
+
+    results = {
+        "DU-Shapley": [],
+        "True Shapley": [],
+        "degradation_type": degradation_type,
+        "degradation_level": degradation_level,
+        "I": I
+    }
+
+    for _ in range(repetitions):
+        calculator = DU_mnist_ShapleyCalculator()
+        calculator.normal_players(I=I, mean=100, std=10)
+
+        if degradation_type == "noise":
+            calculator.X_train = add_noise(calculator.X_train, degradation_level)
+        elif degradation_type == "blur":
+            calculator.X_train = apply_blur(calculator.X_train, degradation_level)
+        elif degradation_type == "occlusion":
+            calculator.X_train = occlude_data(calculator.X_train, degradation_level)
+        elif degradation_type == "downsampling":
+            calculator.X_train = downsample_data(calculator.X_train, degradation_level)
+        elif degradation_type == "mislabeling":
+            calculator.X_train, calculator.y_train = mislabel_data(calculator.X_train, calculator.y_train, degradation_level)
+
+        du_shapley = calculator.du_shapley_value()
+        true_shapley = calculator.calculate_true_shapley()
+
+        results["DU-Shapley"].append(du_shapley)
+        results["True Shapley"].append(true_shapley)
+
+    return results
 

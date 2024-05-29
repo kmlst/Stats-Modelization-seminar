@@ -42,6 +42,12 @@ class DU_mnist_ShapleyCalculator:
             players_data.append(player_indices)
             available_indices -= set(player_indices) # each player has unique data points
         self.players_data = players_data
+
+    def utility(self, n):
+        """ Calculate utility for a player with n data points chosen at random"""
+        model = self.model(max_iter=self.max_iter)
+        model.fit(self.X_train[:n], self.y_train[:n])
+        return self.metric(self.y_test, model.predict(self.X_test))
     
     def du_shapley_value(self):
         """ Calculate DU-Shapley values for initialized players. """

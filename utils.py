@@ -10,7 +10,7 @@ import itertools
 class DU_mnist_ShapleyCalculator:
     def __init__(self, dataset='mnist_784', model=LogisticRegression, metric=accuracy_score, max_iter=1000):
         self.dataset = dataset
-        self.model = model
+        self.model = model(max_iter=max_iter) 
         self.metric = metric
         self.max_iter = max_iter
         self.load_data_normal()
@@ -46,39 +46,40 @@ class DU_mnist_ShapleyCalculator:
 
     def utility(self, n):
         """ Calculate utility for a player with n data points chosen at random"""
-        model = self.model(max_iter=self.max_iter)
+        model = self.model
         model.fit(self.X_train[:n], self.y_train[:n])
         return self.metric(self.y_test, model.predict(self.X_test))
     
     def du_shapley_value(self):
         """ Calculate DU-Shapley values for initialized players. """
         psi = np.zeros(self.I)
-        pooled_data = np.concatenate(self.players_data) 
+        pooled_data = np.concatenate(self.players_data)
         for i in range(self.I):
             others = [j for j in range(self.I) if j != i]
-            mu_minus_i = sum(len(self.players_data[j]) for j in others) / (self.I - 1) 
+            mu_minus_i = sum(len(self.players_data[j]) for j in others) / (self.I - 1)
 
             n_i = len(self.players_data[i])
 
-            # Case k=0
-            model_with_i = self.model(max_iter=self.max_iter)
+            # Case k=0 
+            model_with_i = self.model
             model_with_i.fit(self.X_train[self.players_data[i]], self.y_train[self.players_data[i]])
             u_with = self.metric(self.y_test, model_with_i.predict(self.X_test))
-            psi[i] = u_with / self.I
+            psi[i] = u_with / self.I  # Contribution pour k=0
 
-            # Calculate contributions for k = 1 to I-2
-            for k in range(1, self.I - 1): 
-                u_with = 0  
-                model_with_i = self.model(max_iter=self.max_iter)
-                model_without_i = self.model(max_iter=self.max_iter)
+            # Calculer les contributions pour k=1 à I-2
+            for k in range(1, self.I - 1):
+                u_with = 0
+                model_with_i = self.model
+                model_without_i = self.model
                 pooled_indices = np.random.choice(pooled_data, int(k * mu_minus_i) + n_i, replace=False)
                 model_with_i.fit(self.X_train[pooled_indices], self.y_train[pooled_indices])
                 u_with = self.metric(self.y_test, model_with_i.predict(self.X_test))
 
-                model_without_i.fit(self.X_train[pooled_indices[:int(k * mu_minus_i)]], self.y_train[pooled_indices[:int(k * mu_minus_i)]])
-                u_without = self.metric(self.y_test, model_without_i.predict(self.X_test)) 
-                
-                psi[i] += (u_with - u_without) / self.I
+                model_without_i.fit(self.X_train[pooled_indices[:int(k * mu_minus_i)]],
+                                     self.y_train[pooled_indices[:int(k * mu_minus_i)]])
+                u_without = self.metric(self.y_test, model_without_i.predict(self.X_test))
+
+                psi[i] += (u_with - u_without) / self.I  # Accumuler les contributions pour chaque k
 
         return psi
 
@@ -91,20 +92,25 @@ class DU_mnist_ShapleyCalculator:
                 for coalition in itertools.combinations(all_players - {i}, coalition_size):
                     coalition = set(coalition)
                     coalition_with_i = coalition | {i}
-                    if coalition: 
-                        true_shapley[i] += (self.evaluate_coalition(coalition_with_i) - self.evaluate_coalition(coalition)) / (self.I * np.math.comb(self.I-1, coalition_size))
+
+                    # Gérer le cas de coalition vide :
+                    if coalition:
+                        true_shapley[i] += (self.evaluate_coalition(coalition_with_i) - self.evaluate_coalition(
+                            coalition)) / (self.I * np.math.comb(self.I - 1, coalition_size))
                     else:
-                        true_shapley[i] += self.evaluate_coalition(coalition_with_i) / (self.I * np.math.comb(self.I-1, coalition_size)) 
+                        # Si la coalition est vide, la contribution est seulement la valeur avec le joueur i
+                        true_shapley[i] += self.evaluate_coalition(coalition_with_i) / (
+                                self.I * np.math.comb(self.I - 1, coalition_size))
         return true_shapley
 
     def evaluate_coalition(self, coalition):
         """Train and evaluate a model on data from a given coalition of players.
-        
+
         Parameters:
         - coalition (set): Set of player indices forming the coalition.
         """
         coalition_indices = np.concatenate([self.players_data[i] for i in coalition])
-        model = self.model(max_iter=self.max_iter)
+        model = self.model
         model.fit(self.X_train[coalition_indices], self.y_train[coalition_indices])
         return self.metric(self.y_test, model.predict(self.X_test))
 
@@ -141,11 +147,15 @@ def occlude_data(data, occlusion_ratio):
     return occluded_data
 
 def downsample_data(data, downsampling_factor):
-    """Réduit la résolution des données."""
-    downsampled_data = np.zeros((data.shape[0], 784 // downsampling_factor**2))
+    """Réduit la résolution des données, puis redimensionne à la taille originale."""
+    new_width = 28 // downsampling_factor
+    new_height = 28 // downsampling_factor
+
+    downsampled_data = np.zeros_like(data)
     for i in range(data.shape[0]):
-        img = data[i].reshape(28, 28)
-        downsampled_img = cv2.resize(img, (28 // downsampling_factor, 28 // downsampling_factor))
+        img = data[i].reshape(28, 28).astype(np.uint8)
+        downsampled_img = cv2.resize(img, (new_width, new_height))
+        downsampled_img = cv2.resize(downsampled_img, (28, 28))
         downsampled_data[i] = downsampled_img.flatten()
     return downsampled_data
 
@@ -160,7 +170,7 @@ def mislabel_data(data, labels, mislabeling_ratio):
 
 # --- Méthodologie pour vérifier l'impact de la qualité des données ---
 
-def run_experiment(I, degradation_type, degradation_level, repetitions=10):
+def run_experiment(I, degradation_type, degradation_level, players_to_degrade, repetitions=10):
     """Exécute une expérience pour un scénario donné."""
 
     results = {
@@ -168,23 +178,31 @@ def run_experiment(I, degradation_type, degradation_level, repetitions=10):
         "True Shapley": [],
         "degradation_type": degradation_type,
         "degradation_level": degradation_level,
-        "I": I
+        "I": I,
+        "players_to_degrade": players_to_degrade
     }
 
     for _ in range(repetitions):
         calculator = DU_mnist_ShapleyCalculator()
         calculator.normal_players(I=I, mean=100, std=10)
 
-        if degradation_type == "noise":
-            calculator.X_train = add_noise(calculator.X_train, degradation_level)
-        elif degradation_type == "blur":
-            calculator.X_train = apply_blur(calculator.X_train, degradation_level)
-        elif degradation_type == "occlusion":
-            calculator.X_train = occlude_data(calculator.X_train, degradation_level)
-        elif degradation_type == "downsampling":
-            calculator.X_train = downsample_data(calculator.X_train, degradation_level)
-        elif degradation_type == "mislabeling":
-            calculator.X_train, calculator.y_train = mislabel_data(calculator.X_train, calculator.y_train, degradation_level)
+        # Appliquer les dégradations aux joueurs spécifiés
+        for player_index in players_to_degrade:
+            if player_index >= I:
+                raise ValueError(f"Indice de joueur invalide : {player_index} (I = {I})")
+
+            if degradation_type == "noise":
+                calculator.X_train[calculator.players_data[player_index]] = add_noise(calculator.X_train[calculator.players_data[player_index]], degradation_level)
+            elif degradation_type == "blur":
+                calculator.X_train[calculator.players_data[player_index]] = apply_blur(calculator.X_train[calculator.players_data[player_index]], degradation_level)
+            elif degradation_type == "occlusion":
+                calculator.X_train[calculator.players_data[player_index]] = occlude_data(calculator.X_train[calculator.players_data[player_index]], degradation_level)
+            elif degradation_type == "downsampling":
+                calculator.X_train[calculator.players_data[player_index]] = downsample_data(calculator.X_train[calculator.players_data[player_index]], degradation_level)
+            elif degradation_type == "mislabeling":
+                calculator.X_train[calculator.players_data[player_index]], calculator.y_train[calculator.players_data[player_index]] = mislabel_data(
+                    calculator.X_train[calculator.players_data[player_index]], calculator.y_train[calculator.players_data[player_index]], degradation_level
+                )
 
         du_shapley = calculator.du_shapley_value()
         true_shapley = calculator.calculate_true_shapley()
